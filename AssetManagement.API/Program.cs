@@ -80,4 +80,7 @@ app.MapDashboardEndpoints();
 app.MapReportEndpoints();
 app.MapBulkUploadEndpoints();
 
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
+app.Urls.Add($"http://*:{port}");
+
 app.Run();
