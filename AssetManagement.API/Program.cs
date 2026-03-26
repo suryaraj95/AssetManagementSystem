@@ -1,0 +1,83 @@
+using AssetManagement.API.Data;
+using AssetManagement.API.Endpoints;
+using AssetManagement.API.Helpers;
+using AssetManagement.API.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default"))
+           .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
+
+// JWT configuration
+var jwtKey = builder.Configuration["Jwt:Key"] ?? "SecretKeyForDevelopmentPurposesOnlyDoNotUseInProduction12345";
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+});
+
+// Dependency Injection
+builder.Services.AddSingleton<JwtHelper>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAssetIdGeneratorService, AssetIdGeneratorService>();
+builder.Services.AddScoped<IAssetService, AssetService>();
+builder.Services.AddScoped<IRequestService, RequestService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddScoped<IBulkUploadService, BulkUploadService>();
+builder.Services.AddHttpClient<IEmailService, EmailService>();
+
+var app = builder.Build();
+
+app.UseCors();
+app.UseMiddleware<AssetManagement.API.Middleware.ExceptionMiddleware>();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapAuthEndpoints();
+app.MapUserEndpoints();
+app.MapConfigEndpoints();
+app.MapAssetEndpoints();
+app.MapRequestEndpoints();
+app.MapNotificationEndpoints();
+app.MapDashboardEndpoints();
+app.MapReportEndpoints();
+app.MapBulkUploadEndpoints();
+
+app.Run();
