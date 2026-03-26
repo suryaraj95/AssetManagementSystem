@@ -13,9 +13,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Database
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Default"))
-           .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
 // JWT configuration
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "SecretKeyForDevelopmentPurposesOnlyDoNotUseInProduction12345";
@@ -36,9 +36,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// CORS
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader());
 });
 
 // Dependency Injection
@@ -56,16 +60,18 @@ builder.Services.AddHttpClient<IEmailService, EmailService>();
 
 var app = builder.Build();
 
+// Middleware
 app.UseCors();
 app.UseMiddleware<AssetManagement.API.Middleware.ExceptionMiddleware>();
 
+// Swagger (enabled in all environments)
 app.UseSwagger();
 app.UseSwaggerUI();
-
 
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Endpoints
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapConfigEndpoints();
@@ -76,6 +82,7 @@ app.MapDashboardEndpoints();
 app.MapReportEndpoints();
 app.MapBulkUploadEndpoints();
 
+// Render port binding
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
 app.Urls.Add($"http://*:{port}");
 
