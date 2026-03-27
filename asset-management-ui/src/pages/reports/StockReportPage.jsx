@@ -3,6 +3,7 @@ import { useAssets } from '../../hooks/useAssets';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Button } from '../../components/ui/button';
 import { FileDown } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export default function StockReportPage() {
   const { data: assetsData, isLoading } = useAssets({ page: 1, size: 5000 });
@@ -51,6 +52,25 @@ export default function StockReportPage() {
     return rows;
   }, [assets]);
 
+  const handleExport = () => {
+    if (!reportData || reportData.length === 0) return;
+
+    const exportData = reportData.map(row => ({
+      Category: row.category,
+      'Asset Type': row.type,
+      'Available Stock': row.stats.available,
+      Assigned: row.stats.assigned,
+      'In Maintenance': row.stats.maintenance,
+      Retired: row.stats.retired,
+      'Total Units': row.stats.total
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Stock Report");
+    XLSX.writeFile(workbook, "asset_details.xlsx");
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -59,8 +79,7 @@ export default function StockReportPage() {
           <p className="text-muted-foreground mt-1">Real-time breakdown of asset allocation and availability across the system.</p>
         </div>
         <div className="flex gap-2">
-          {/* We'll link these to true backend generators later if needed, stubbing visually for now */}
-          <Button variant="outline" onClick={() => alert("Excel Export endpoint pending implementation")}><FileDown className="w-4 h-4 mr-2" /> Export Excel</Button>
+          <Button variant="outline" onClick={handleExport}><FileDown className="w-4 h-4 mr-2" /> Export Excel</Button>
         </div>
       </div>
 
