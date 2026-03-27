@@ -9,4 +9,7 @@ export default defineConfig({
       "@": "/src",
     },
   },
+  css: {
+    minify: 'esbuild'
+  }
 })
