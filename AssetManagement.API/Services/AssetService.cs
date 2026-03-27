@@ -85,9 +85,9 @@ namespace AssetManagement.API.Services
                 BrandName = dto.BrandName,
                 Status = dto.Status,
                 Condition = dto.Condition,
-                PurchaseDate = dto.PurchaseDate,
+                PurchaseDate = dto.PurchaseDate.HasValue ? DateTime.SpecifyKind(dto.PurchaseDate.Value, DateTimeKind.Unspecified) : null,
                 PurchaseCost = dto.PurchaseCost,
-                WarrantyExpiry = dto.WarrantyExpiry,
+                WarrantyExpiry = dto.WarrantyExpiry.HasValue ? DateTime.SpecifyKind(dto.WarrantyExpiry.Value, DateTimeKind.Unspecified) : null,
                 Notes = dto.Notes
             };
 
@@ -118,9 +118,9 @@ namespace AssetManagement.API.Services
 
             asset.BrandName = dto.BrandName;
             asset.SerialNumber = dto.SerialNumber;
-            asset.PurchaseDate = dto.PurchaseDate;
+            asset.PurchaseDate = dto.PurchaseDate.HasValue ? DateTime.SpecifyKind(dto.PurchaseDate.Value, DateTimeKind.Unspecified) : null;
             asset.PurchaseCost = dto.PurchaseCost;
-            asset.WarrantyExpiry = dto.WarrantyExpiry;
+            asset.WarrantyExpiry = dto.WarrantyExpiry.HasValue ? DateTime.SpecifyKind(dto.WarrantyExpiry.Value, DateTimeKind.Unspecified) : null;
             asset.Notes = dto.Notes;
             asset.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -131,9 +131,18 @@ namespace AssetManagement.API.Services
                 else { asset.SpecValues.Add(new AssetSpecValue { SpecDefinitionId = sv.Key, Value = sv.Value }); }
             }
 
-            asset.History.Add(new AssetHistory { Action = "Updated", PerformedById = userId, Remarks = "Asset details updated" });
+            // Use DbSet for inserted entities instead of modifying an unloaded navigation collection
+            _db.AssetHistories.Add(new AssetHistory { AssetId = asset.Id, Action = "Updated", PerformedById = userId, Remarks = "Asset details updated" });
 
-            await _db.SaveChangesAsync();
+            try 
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException ex)
+            {
+                var entry = ex.Entries.FirstOrDefault();
+                throw new Exception($"Concurrency exception on {entry?.Metadata.Name}: {ex.Message}");
+            }
             return await GetByIdAsync(asset.Id) ?? throw new Exception("Error during reload.");
         }
 
@@ -280,6 +289,7 @@ namespace AssetManagement.API.Services
             AssignedEmployeeEmpId = a.AssignedEmployee?.EmployeeId,
             AssignedAt = a.AssignedAt,
             PurchaseCost = a.PurchaseCost,
+            WarrantyExpiry = a.WarrantyExpiry,
             Specs = a.SpecValues.Select(v => new AssetSpecValueDto {
                 SpecDefinitionId = v.SpecDefinitionId,
                 SpecName = v.SpecDefinition?.SpecName ?? "Unknown",

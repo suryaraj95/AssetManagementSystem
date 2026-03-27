@@ -28,9 +28,11 @@ public class ExceptionMiddleware
             context.Response.ContentType = "application/json";
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
 
-            object response = _env.IsDevelopment()
-                ? new { message = ex.Message, detail = ex.StackTrace }
-                : new { message = "An internal server error occurred.", detail = (string?)"Internal Server Error" };
+            object response = new { 
+                message = ex.Message, 
+                detail = ex.StackTrace,
+                inner = ex.InnerException?.Message
+            };
 
             var json = JsonSerializer.Serialize(response);
             await context.Response.WriteAsync(json);

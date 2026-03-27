@@ -10,7 +10,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
 import { Label } from '../../components/ui/label';
 import { Badge } from '../../components/ui/badge';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../components/ui/dropdown-menu';
+import { MoreHorizontal, Eye, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+
+const getWarrantyStatus = (date) => {
+  if (!date) return { label: 'Not Applicable', color: 'bg-slate-200' };
+  const expiry = new Date(date);
+  const now = new Date();
+  const diffTime = expiry.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return { label: new Date(date).toLocaleDateString(), color: 'bg-red-500' };
+  if (diffDays <= 30) return { label: new Date(date).toLocaleDateString(), color: 'bg-yellow-500' };
+  return { label: new Date(date).toLocaleDateString(), color: 'bg-green-500' };
+};
 
 export default function AssetListPage() {
   const navigate = useNavigate();
@@ -118,6 +132,7 @@ export default function AssetListPage() {
               <TableHead>Assignee</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Condition</TableHead>
+              <TableHead>Warranty</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -161,14 +176,44 @@ export default function AssetListPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-sm font-medium">{asset.condition}</TableCell>
+                  <TableCell className="text-sm">
+                    {(() => {
+                      const wStatus = getWarrantyStatus(asset.warrantyExpiry);
+                      return (
+                        <div className="flex items-center gap-2">
+                          {asset.warrantyExpiry && <span className={`w-3 h-3 rounded-full ${wStatus.color}`}></span>}
+                          <span className={!asset.warrantyExpiry ? "text-slate-400" : ""}>{wStatus.label}</span>
+                        </div>
+                      );
+                    })()}
+                  </TableCell>
                   <TableCell className="text-right">
-                    {user?.role === 'Admin' && (
-                      <>
-                        <Button variant="outline" size="sm" className="mr-2" onClick={() => setEditAsset(asset)}>Edit</Button>
-                        <Button variant="destructive" size="sm" className="mr-2" onClick={() => handleDelete(asset.id)} disabled={deleteMutation.isPending}>Delete</Button>
-                      </>
-                    )}
-                    <Button variant="outline" size="sm" onClick={() => navigate(`/assets/${asset.id}`)}>View</Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <span className="sr-only">Open menu</span>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => navigate(`/assets/${asset.id}`)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          View Details
+                        </DropdownMenuItem>
+                        {user?.role === 'Admin' && (
+                          <>
+                            <DropdownMenuItem onClick={() => setEditAsset(asset)}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit Asset
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDelete(asset.id)} disabled={deleteMutation.isPending} className="text-red-600 focus:text-red-600">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete Asset
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))
@@ -211,6 +256,8 @@ function AddAssetModal({ isOpen, onClose }) {
     serialNumber: '',
     status: 'Available',
     condition: 'Good',
+    hasWarranty: true,
+    warrantyExpiry: '',
     specValues: {}
   });
 
@@ -218,7 +265,11 @@ function AddAssetModal({ isOpen, onClose }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    createMutation.mutate(formData, {
+    const payload = {
+      ...formData,
+      warrantyExpiry: formData.hasWarranty && formData.warrantyExpiry ? new Date(formData.warrantyExpiry).toISOString() : null
+    };
+    createMutation.mutate(payload, {
       onSuccess: () => {
         toast.success('Asset created successfully!');
         onClose();
@@ -278,6 +329,30 @@ function AddAssetModal({ isOpen, onClose }) {
             <div className="space-y-2">
               <Label>Serial Number</Label>
               <Input value={formData.serialNumber} onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2 flex flex-col justify-end">
+              <div className="flex items-center space-x-2 py-2">
+                <input 
+                  type="checkbox" 
+                  id="hasWarranty" 
+                  checked={formData.hasWarranty}
+                  onChange={(e) => setFormData({ ...formData, hasWarranty: e.target.checked, warrantyExpiry: e.target.checked ? formData.warrantyExpiry : '' })}
+                  className="rounded border-gray-300 w-4 h-4 cursor-pointer text-indigo-600 focus:ring-indigo-600"
+                />
+                <Label htmlFor="hasWarranty" className="font-normal cursor-pointer">Has Warranty</Label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Warranty Expiry</Label>
+              <Input 
+                type="date" 
+                disabled={!formData.hasWarranty}
+                value={formData.warrantyExpiry} 
+                onChange={(e) => setFormData({ ...formData, warrantyExpiry: e.target.value })} 
+                required={formData.hasWarranty}
+              />
             </div>
           </div>
 
@@ -361,21 +436,31 @@ function AssignAssetModal({ isOpen, onClose, assetId }) {
 
 function EditAssetModal({ isOpen, onClose, asset }) {
   const updateMutation = useUpdateAsset();
+  const _date = asset.warrantyExpiry ? new Date(asset.warrantyExpiry).toISOString().split('T')[0] : '';
   const [formData, setFormData] = useState({
     brandName: asset.brandName || '',
     serialNumber: asset.serialNumber || '',
     status: asset.status || 'Available',
     condition: asset.condition || 'Good',
     notes: asset.notes || '',
+    hasWarranty: !!asset.warrantyExpiry,
+    warrantyExpiry: _date,
     specValues: {}
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    updateMutation.mutate({ id: asset.id, payload: formData }, {
+    const payload = {
+      ...formData,
+      warrantyExpiry: formData.hasWarranty && formData.warrantyExpiry ? new Date(formData.warrantyExpiry).toISOString() : null
+    };
+    updateMutation.mutate({ id: asset.id, payload: payload }, {
       onSuccess: () => {
         toast.success('Asset updated successfully!');
         onClose();
+      },
+      onError: (err) => {
+        toast.error(err.response?.data?.message || err.message || 'Update failed');
       }
     });
   };
@@ -414,6 +499,28 @@ function EditAssetModal({ isOpen, onClose, asset }) {
                 <option value="Poor">Poor</option>
                 <option value="Broken">Broken</option>
               </select>
+            </div>
+            <div className="space-y-2 flex flex-col justify-end">
+              <div className="flex items-center space-x-2 py-2">
+                <input 
+                  type="checkbox" 
+                  id="editHasWarranty" 
+                  checked={formData.hasWarranty}
+                  onChange={(e) => setFormData({ ...formData, hasWarranty: e.target.checked, warrantyExpiry: e.target.checked ? formData.warrantyExpiry : '' })}
+                  className="rounded border-gray-300 w-4 h-4 cursor-pointer text-indigo-600 focus:ring-indigo-600"
+                />
+                <Label htmlFor="editHasWarranty" className="font-normal cursor-pointer">Has Warranty</Label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Warranty Expiry</Label>
+              <Input 
+                type="date" 
+                disabled={!formData.hasWarranty}
+                value={formData.warrantyExpiry} 
+                onChange={(e) => setFormData({ ...formData, warrantyExpiry: e.target.value })} 
+                required={formData.hasWarranty}
+              />
             </div>
           </div>
           <DialogFooter className="mt-6">

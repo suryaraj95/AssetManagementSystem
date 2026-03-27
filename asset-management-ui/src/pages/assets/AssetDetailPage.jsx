@@ -51,6 +51,7 @@ export default function AssetDetailPage() {
             <div><span className="text-muted-foreground">Serial No:</span> <p className="font-medium font-mono">{asset.serialNumber || 'N/A'}</p></div>
             <div><span className="text-muted-foreground">Status:</span> <div className="mt-1"><Badge variant={asset.status === 'Available' ? 'default' : 'secondary'}>{asset.status}</Badge></div></div>
             <div><span className="text-muted-foreground">Condition:</span> <p className="font-medium">{asset.condition}</p></div>
+            <div><span className="text-muted-foreground">Warranty:</span> <p className="font-medium">{asset.warrantyExpiry ? new Date(asset.warrantyExpiry).toLocaleDateString() : 'Not Applicable'}</p></div>
           </div>
         </div>
 
