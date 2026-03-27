@@ -1,8 +1,11 @@
 import axios from 'axios';
 import useAuthStore from '../store/authStore';
 
+const BASE_URL =
+  import.meta.env.VITE_API_URL || 'https://assetmanagementsystem-pznm.onrender.com';
+
 const apiClient = axios.create({
-  baseURL: (import.meta.env.VITE_API_URL || 'http://localhost:5202') + '/api',
+  baseURL: BASE_URL + '/api',
   headers: {
     'Content-Type': 'application/json',
   },
