@@ -109,3 +109,56 @@ export const useChangeAssetStatus = () => {
     },
   });
 };
+
+export const useDownloadTemplate = () => {
+  return useMutation({
+    mutationFn: async () => {
+      const response = await apiClient.get('/assets/import-template', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'AssetsImportTemplate.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+    }
+  });
+};
+
+export const useImportAssets = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (file) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const { data } = await apiClient.post('/assets/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assets'] });
+    }
+  });
+};
+
+export const useExportAssets = () => {
+  return useMutation({
+    mutationFn: async (filters = {}) => {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') params.append(key, val);
+      });
+      const response = await apiClient.get(`/assets/export?${params.toString()}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      link.setAttribute('download', `AssetsExport_${today}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    }
+  });
+};

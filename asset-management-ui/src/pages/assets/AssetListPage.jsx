@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
-import { useAssets, useCreateAsset, useAssignAsset, useUnassignAsset, useUpdateAsset, useDeleteAsset, useAssetFilters } from '../../hooks/useAssets';
+import { useAssets, useCreateAsset, useAssignAsset, useUnassignAsset, useUpdateAsset, useDeleteAsset, useAssetFilters, useDownloadTemplate, useImportAssets, useExportAssets } from '../../hooks/useAssets';
 import { useEmployees } from '../../hooks/useEmployees';
 import { useAssetTypes, useBranches, useSpecs, useCategories } from '../../hooks/useConfig';
 import { Button } from '../../components/ui/button';
@@ -56,10 +56,27 @@ export default function AssetListPage() {
   const assets = assetsData?.items || [];
 
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [assignAssetId, setAssignAssetId] = useState(null);
   const [editAsset, setEditAsset] = useState(null);
   const unassignMutation = useUnassignAsset();
   const deleteMutation = useDeleteAsset();
+  const exportMutation = useExportAssets();
+
+  const handleExport = () => {
+    exportMutation.mutate({
+      categoryId: filterCategory || undefined,
+      assetTypeId: filterType || undefined,
+      branchId: filterBranch || undefined,
+      employeeId: filterEmployeeId || undefined,
+      status: filterStatus || undefined,
+      condition: filterCondition || undefined,
+      search: searchTerm || undefined
+    }, {
+      onSuccess: () => toast.success('Assets exported successfully'),
+      onError: (err) => toast.error(err.response?.data?.message || 'Export failed')
+    });
+  };
 
   const handleUnassign = (id) => {
     if (confirm('Are you sure you want to unassign this asset? It will be marked as Available.')) {
@@ -83,7 +100,13 @@ export default function AssetListPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Assets</h1>
-        <Button onClick={() => setIsAddOpen(true)}>Add Asset</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExport} disabled={exportMutation.isPending}>
+            {exportMutation.isPending ? 'Exporting...' : 'Assets Export'}
+          </Button>
+          {user?.role === 'Admin' && <Button variant="outline" onClick={() => setIsImportOpen(true)}>Assets Import</Button>}
+          <Button onClick={() => setIsAddOpen(true)}>Add Asset</Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -143,14 +166,14 @@ export default function AssetListPage() {
               <TableRow><TableCell colSpan={9} className="text-center">No assets found</TableCell></TableRow>
             ) : (
               assets.map((asset) => (
-                <TableRow key={asset.id}>
+                <TableRow key={asset.id} className="cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => navigate(`/assets/${asset.id}`)}>
                   {user?.role === 'Admin' && (
                     <TableCell>
                       {asset.status === 'Available' && (
-                        <Button size="sm" onClick={() => setAssignAssetId(asset.id)}>Assign</Button>
+                        <Button size="sm" onClick={(e) => { e.stopPropagation(); setAssignAssetId(asset.id); }}>Assign</Button>
                       )}
                       {asset.status === 'Assigned' && (
-                        <Button size="sm" variant="destructive" onClick={() => handleUnassign(asset.id)} disabled={unassignMutation.isPending}>Unassign</Button>
+                        <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleUnassign(asset.id); }} disabled={unassignMutation.isPending}>Unassign</Button>
                       )}
                     </TableCell>
                   )}
@@ -190,23 +213,23 @@ export default function AssetListPage() {
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
+                        <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
                           <span className="sr-only">Open menu</span>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => navigate(`/assets/${asset.id}`)}>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/assets/${asset.id}`); }}>
                           <Eye className="mr-2 h-4 w-4" />
                           View Details
                         </DropdownMenuItem>
                         {user?.role === 'Admin' && (
                           <>
-                            <DropdownMenuItem onClick={() => setEditAsset(asset)}>
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditAsset(asset); }}>
                               <Edit className="mr-2 h-4 w-4" />
                               Edit Asset
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDelete(asset.id)} disabled={deleteMutation.isPending} className="text-red-600 focus:text-red-600">
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDelete(asset.id); }} disabled={deleteMutation.isPending} className="text-red-600 focus:text-red-600">
                               <Trash2 className="mr-2 h-4 w-4" />
                               Delete Asset
                             </DropdownMenuItem>
@@ -223,6 +246,7 @@ export default function AssetListPage() {
       </div>
 
       <AddAssetModal isOpen={isAddOpen} onClose={() => setIsAddOpen(false)} />
+      <ImportAssetsModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} />
       {assignAssetId && (
         <AssignAssetModal
           isOpen={!!assignAssetId}
@@ -528,6 +552,79 @@ function EditAssetModal({ isOpen, onClose, asset }) {
             <Button type="submit" disabled={updateMutation.isPending}>Update Asset</Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ImportAssetsModal({ isOpen, onClose }) {
+  const downloadMutation = useDownloadTemplate();
+  const importMutation = useImportAssets();
+  const [file, setFile] = useState(null);
+  const [errors, setErrors] = useState([]);
+
+  const handleDownload = () => {
+    downloadMutation.mutate(undefined, {
+      onSuccess: () => toast.success('Template downloaded successfully!'),
+      onError: (err) => toast.error('Failed to download template')
+    });
+  };
+
+  const handleImport = (e) => {
+    e.preventDefault();
+    if (!file) return;
+    setErrors([]);
+    importMutation.mutate(file, {
+      onSuccess: (data) => {
+        toast.success(`Successfully imported ${data.uploadedCount} assets.`);
+        onClose();
+        setFile(null);
+      },
+      onError: (err) => {
+        const errData = err.response?.data;
+        if (errData && errData.errors) {
+            setErrors(errData.errors);
+            toast.error('Import failed due to validation errors.');
+        } else {
+            toast.error(err.response?.data?.message || err.message || 'Import failed');
+        }
+      }
+    });
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => { if(!open) { onClose(); setFile(null); setErrors([]); } }}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Import Assets</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-6">
+          <div className="p-4 border rounded-md bg-slate-50 flex items-center justify-between">
+            <div>
+              <h4 className="font-medium">Step 1: Download Template</h4>
+              <p className="text-sm text-slate-500">Get the exact columns needed for import.</p>
+            </div>
+            <Button variant="secondary" onClick={handleDownload} disabled={downloadMutation.isPending}>Download</Button>
+          </div>
+          <form onSubmit={handleImport} className="p-4 border rounded-md space-y-4">
+            <div>
+              <h4 className="font-medium mb-1">Step 2: Upload Excel</h4>
+              <p className="text-sm text-slate-500 mb-3">Fill the downloaded template and upload it here. Follow All or Nothing validation.</p>
+              <Input type="file" accept=".xlsx,.xls" onChange={(e) => setFile(e.target.files[0])} />
+            </div>
+            {errors.length > 0 && (
+                <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm max-h-32 overflow-y-auto">
+                    <ul className="list-disc pl-4">
+                        {errors.map((err, i) => <li key={i}>{err}</li>)}
+                    </ul>
+                </div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => { onClose(); setFile(null); setErrors([]); }}>Cancel</Button>
+              <Button type="submit" disabled={!file || importMutation.isPending}>Import Assets</Button>
+            </DialogFooter>
+          </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

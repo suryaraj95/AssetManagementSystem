@@ -102,6 +102,40 @@ namespace AssetManagement.API.Endpoints
             {
                 return Results.Ok(await assetService.GetHistoryAsync(id));
             });
+
+            group.MapGet("/import-template", async (IAssetService assetService) =>
+            {
+                var fileBytes = await assetService.GenerateImportTemplateAsync();
+                return Results.File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "AssetsImportTemplate.xlsx");
+            }).RequireAuthorization(p => p.RequireRole("Admin", "HR"));
+
+            group.MapGet("/export", async (
+                [FromQuery] Guid? branchId, [FromQuery] Guid? categoryId, [FromQuery] Guid? assetTypeId, 
+                [FromQuery] Guid? employeeId, [FromQuery] string? status, [FromQuery] string? condition, 
+                [FromQuery] string? search, HttpContext context, IAssetService assetService) => 
+            {
+                var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+                var userId = Guid.Parse(context.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                if (role == "Employee") employeeId = userId;
+
+                var fileBytes = await assetService.ExportAssetsAsync(branchId, categoryId, assetTypeId, employeeId, status, condition, search);
+                return Results.File(fileBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"AssetsExport_{DateTime.UtcNow:yyyyMMdd}.xlsx");
+            });
+
+            group.MapPost("/import", async (HttpContext context, IAssetService assetService) =>
+            {
+                if (!context.Request.HasFormContentType || !context.Request.Form.Files.Any())
+                    return Results.BadRequest("No file uploaded.");
+
+                var file = context.Request.Form.Files[0];
+                if (file.Length == 0) return Results.BadRequest("Empty file.");
+
+                var adminId = Guid.Parse(context.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                using var stream = file.OpenReadStream();
+                
+                var result = await assetService.ImportAssetsAsync(stream, adminId);
+                return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+            }).RequireAuthorization(p => p.RequireRole("Admin", "HR"));
         }
     }
 
