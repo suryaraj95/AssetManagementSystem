@@ -4,6 +4,7 @@ import { useDashboardSummary } from '../../hooks/useDashboard';
 import { useAssets } from '../../hooks/useAssets';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import ChatbotPanel from '../../components/chatbot/ChatbotPanel';
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
@@ -134,6 +135,9 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* AI Chatbot — Admin only */}
+      {user?.role === 'Admin' && <ChatbotPanel />}
     </div>
   );
 }

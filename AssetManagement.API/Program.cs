@@ -58,6 +58,9 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<IBulkUploadService, BulkUploadService>();
 builder.Services.AddHttpClient<IEmailService, EmailService>();
+// Chatbot
+builder.Services.AddScoped<ChatbotQueryService>();
+builder.Services.AddHttpClient<ChatbotService>();
 
 var app = builder.Build();
 
@@ -82,6 +85,7 @@ app.MapNotificationEndpoints();
 app.MapDashboardEndpoints();
 app.MapReportEndpoints();
 app.MapBulkUploadEndpoints();
+app.MapChatbotEndpoints();
 
 // Render port binding
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
