@@ -21,6 +21,8 @@ namespace AssetManagement.API.Services
         Task ChangeStatusAsync(Guid assetId, string status, string condition, string? remarks, Guid adminId);
         Task DeleteAsync(Guid id, Guid adminId);
         Task<List<AssetHistoryDto>> GetHistoryAsync(Guid assetId);
+        Task SaveDispatchAsync(Guid assetId, DateTimeOffset dispatchDate, byte[]? receiptBytes, string? receiptFileName, string? receiptContentType, Guid userId);
+        ReceiptEntry? GetDispatchReceipt(Guid assetId);
         Task<byte[]> GenerateImportTemplateAsync();
         Task<AssetImportResultDto> ImportAssetsAsync(System.IO.Stream fileStream, Guid adminId);
         Task<byte[]> ExportAssetsAsync(Guid? branchId = null, Guid? categoryId = null, Guid? assetTypeId = null, Guid? employeeId = null, string? status = null, string? condition = null, string? search = null);
@@ -30,11 +32,13 @@ namespace AssetManagement.API.Services
     {
         private readonly AppDbContext _db;
         private readonly IAssetIdGeneratorService _idGen;
+        private readonly DispatchReceiptStore _receiptStore;
 
-        public AssetService(AppDbContext db, IAssetIdGeneratorService idGen)
+        public AssetService(AppDbContext db, IAssetIdGeneratorService idGen, DispatchReceiptStore receiptStore)
         {
             _db = db;
             _idGen = idGen;
+            _receiptStore = receiptStore;
         }
 
         public async Task<PaginatedList<AssetResponseDto>> GetAllAsync(int page = 1, int size = 10, Guid? branchId = null, Guid? categoryId = null, Guid? assetTypeId = null, Guid? employeeId = null, string? status = null, string? condition = null, string? search = null)
@@ -54,11 +58,11 @@ namespace AssetManagement.API.Services
             if (!string.IsNullOrEmpty(search)) query = query.Where(a => a.AssetId.Contains(search) || a.SerialNumber!.Contains(search));
 
             var totalCount = await query.CountAsync();
-            var items = await query.OrderByDescending(a => a.CreatedAt)
-                                   .Skip((page - 1) * size)
-                                   .Take(size)
-                                   .Select(a => MapToDto(a))
-                                   .ToListAsync();
+            var entities = await query.OrderByDescending(a => a.CreatedAt)
+                                       .Skip((page - 1) * size)
+                                       .Take(size)
+                                       .ToListAsync();
+            var items = entities.Select(MapToDto).ToList();
 
             return new PaginatedList<AssetResponseDto> { Items = items, TotalCount = totalCount, PageNumber = page, PageSize = size };
         }
@@ -536,7 +540,7 @@ namespace AssetManagement.API.Services
             }
         }
 
-        private static AssetResponseDto MapToDto(Asset a) => new AssetResponseDto
+        private AssetResponseDto MapToDto(Asset a) => new AssetResponseDto
         {
             Id = a.Id,
             AssetId = a.AssetId,
@@ -555,11 +559,42 @@ namespace AssetManagement.API.Services
             AssignedAt = a.AssignedAt,
             PurchaseCost = a.PurchaseCost,
             WarrantyExpiry = a.WarrantyExpiry,
+            DispatchDate = a.DispatchDate,
+            HasDispatchReceipt = _receiptStore.Has(a.Id),
             Specs = a.SpecValues.Select(v => new AssetSpecValueDto {
                 SpecDefinitionId = v.SpecDefinitionId,
                 SpecName = v.SpecDefinition?.SpecName ?? "Unknown",
                 Value = v.Value
             }).ToList()
         };
+
+        public async Task SaveDispatchAsync(Guid assetId, DateTimeOffset dispatchDate, byte[]? receiptBytes, string? receiptFileName, string? receiptContentType, Guid userId)
+        {
+            var asset = await _db.Assets.FindAsync(assetId)
+                ?? throw new Exception("Asset not found");
+
+            if (asset.Status != "Assigned")
+                throw new Exception("Dispatch details can only be added to Assigned assets.");
+
+            asset.DispatchDate = dispatchDate.ToUniversalTime();
+            asset.UpdatedAt = DateTimeOffset.UtcNow;
+
+            _db.AssetHistories.Add(new AssetHistory
+            {
+                AssetId = asset.Id,
+                Action = "DispatchRecorded",
+                PerformedById = userId,
+                Remarks = $"Dispatch date set to {dispatchDate:dd-MMM-yyyy}"
+            });
+
+            await _db.SaveChangesAsync();
+
+            if (receiptBytes != null && receiptFileName != null && receiptContentType != null)
+            {
+                _receiptStore.Save(assetId, new ReceiptEntry(receiptBytes, receiptContentType, receiptFileName));
+            }
+        }
+
+        public ReceiptEntry? GetDispatchReceipt(Guid assetId) => _receiptStore.Get(assetId);
     }
 }

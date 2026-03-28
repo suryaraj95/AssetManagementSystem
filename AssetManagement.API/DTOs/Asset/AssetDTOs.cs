@@ -42,6 +42,8 @@ namespace AssetManagement.API.DTOs.Asset
         public DateTimeOffset? AssignedAt { get; set; }
         public decimal? PurchaseCost { get; set; }
         public DateTime? WarrantyExpiry { get; set; }
+        public DateTimeOffset? DispatchDate { get; set; }
+        public bool HasDispatchReceipt { get; set; }
         
         public List<AssetSpecValueDto> Specs { get; set; } = new();
     }

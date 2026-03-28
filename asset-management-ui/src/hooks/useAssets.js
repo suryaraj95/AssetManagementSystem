@@ -162,3 +162,37 @@ export const useExportAssets = () => {
     }
   });
 };
+
+export const useSaveDispatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, dispatchDate, receiptFile }) => {
+      const formData = new FormData();
+      formData.append('dispatchDate', dispatchDate);
+      if (receiptFile) formData.append('receipt', receiptFile);
+      const { data } = await apiClient.post(`/assets/${id}/dispatch`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['asset', variables.id] });
+    },
+  });
+};
+
+export const useDownloadDispatchReceipt = () => {
+  return useMutation({
+    mutationFn: async ({ id, fileName }) => {
+      const response = await apiClient.get(`/assets/${id}/dispatch-receipt`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName || 'DispatchReceipt';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    },
+  });
+};

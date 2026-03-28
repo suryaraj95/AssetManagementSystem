@@ -47,6 +47,7 @@ builder.Services.AddCors(options =>
 
 // Dependency Injection
 builder.Services.AddSingleton<JwtHelper>();
+builder.Services.AddSingleton<AssetManagement.API.Services.DispatchReceiptStore>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAssetIdGeneratorService, AssetIdGeneratorService>();
 builder.Services.AddScoped<IAssetService, AssetService>();

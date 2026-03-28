@@ -48,6 +48,8 @@ namespace AssetManagement.API.Models
 
         public DateTimeOffset? AssignedAt { get; set; }
 
+        public DateTimeOffset? DispatchDate { get; set; }
+
         public string? CourierTrackingAttachment { get; set; }
 
         public string? Notes { get; set; }

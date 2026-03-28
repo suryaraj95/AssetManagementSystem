@@ -136,7 +136,56 @@ namespace AssetManagement.API.Endpoints
                 var result = await assetService.ImportAssetsAsync(stream, adminId);
                 return result.Success ? Results.Ok(result) : Results.BadRequest(result);
             }).RequireAuthorization(p => p.RequireRole("Admin", "HR"));
+
+            // POST /api/assets/{id}/dispatch — save dispatch date + optional receipt (≤ 1 MB)
+            group.MapPost("/{id:guid}/dispatch", async (Guid id, HttpContext context, IAssetService assetService) =>
+            {
+                if (!context.Request.HasFormContentType)
+                    return Results.BadRequest("Request must be multipart/form-data.");
+
+                var form = context.Request.Form;
+                var dispatchDateStr = form["dispatchDate"].FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(dispatchDateStr) || !DateTimeOffset.TryParse(dispatchDateStr, out var dispatchDate))
+                    return Results.BadRequest("Valid dispatchDate is required.");
+
+                byte[]? receiptBytes = null;
+                string? receiptFileName = null;
+                string? receiptContentType = null;
+
+                var file = form.Files.GetFile("receipt");
+                if (file != null)
+                {
+                    const long maxBytes = 1 * 1024 * 1024; // 1 MB
+                    if (file.Length > maxBytes)
+                        return Results.BadRequest("Receipt file must be 1 MB or smaller.");
+
+                    var allowed = new[] { "image/jpeg", "image/png", "application/pdf" };
+                    if (!allowed.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
+                        return Results.BadRequest("Only JPEG, PNG, and PDF files are accepted.");
+
+                    using var ms = new MemoryStream();
+                    await file.CopyToAsync(ms);
+                    receiptBytes = ms.ToArray();
+                    receiptFileName = file.FileName;
+                    receiptContentType = file.ContentType;
+                }
+
+                var userId = Guid.Parse(context.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                await assetService.SaveDispatchAsync(id, dispatchDate, receiptBytes, receiptFileName, receiptContentType, userId);
+                return Results.Ok(new { message = "Dispatch details saved successfully." });
+            }).RequireAuthorization(p => p.RequireRole("Admin", "HR")).DisableAntiforgery();
+
+            // GET /api/assets/{id}/dispatch-receipt — download receipt from memory
+            group.MapGet("/{id:guid}/dispatch-receipt", (Guid id, IAssetService assetService) =>
+            {
+                var entry = assetService.GetDispatchReceipt(id);
+                if (entry == null)
+                    return Results.NotFound("No receipt on file for this asset.");
+
+                return Results.File(entry.Data, entry.ContentType, entry.FileName);
+            }).RequireAuthorization();
         }
+
     }
 
     public class AssignDto { public Guid EmployeeId { get; set; } }
