@@ -20,7 +20,7 @@ const getWarrantyStatus = (date) => {
   const now = new Date();
   const diffTime = expiry.getTime() - now.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
+
   if (diffDays < 0) return { label: new Date(date).toLocaleDateString(), color: 'bg-red-500' };
   if (diffDays <= 30) return { label: new Date(date).toLocaleDateString(), color: 'bg-yellow-500' };
   return { label: new Date(date).toLocaleDateString(), color: 'bg-green-500' };
@@ -31,20 +31,20 @@ export default function AssetListPage() {
   const { user } = useAuthStore();
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const [filterCategory, setFilterCategory] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterBranch, setFilterBranch] = useState('');
   const [filterEmployeeId, setFilterEmployeeId] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
-  
+
   const { data: filtersData } = useAssetFilters();
   const filterOptions = filtersData || { categories: [], types: [], branches: [], assignees: [], statuses: [], conditions: [] };
-  
-  const { data: assetsData, isLoading } = useAssets({ 
-    page, 
-    size: 50, 
+
+  const { data: assetsData, isLoading } = useAssets({
+    page,
+    size: 50,
     search: searchTerm,
     categoryId: filterCategory || undefined,
     assetTypeId: filterType || undefined,
@@ -110,8 +110,8 @@ export default function AssetListPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input 
-          placeholder="Search assets..." 
+        <Input
+          placeholder="Search assets..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="max-w-xs"
@@ -358,9 +358,9 @@ function AddAssetModal({ isOpen, onClose }) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2 flex flex-col justify-end">
               <div className="flex items-center space-x-2 py-2">
-                <input 
-                  type="checkbox" 
-                  id="hasWarranty" 
+                <input
+                  type="checkbox"
+                  id="hasWarranty"
                   checked={formData.hasWarranty}
                   onChange={(e) => setFormData({ ...formData, hasWarranty: e.target.checked, warrantyExpiry: e.target.checked ? formData.warrantyExpiry : '' })}
                   className="rounded border-gray-300 w-4 h-4 cursor-pointer text-indigo-600 focus:ring-indigo-600"
@@ -370,11 +370,11 @@ function AddAssetModal({ isOpen, onClose }) {
             </div>
             <div className="space-y-2">
               <Label>Warranty Expiry</Label>
-              <Input 
-                type="date" 
+              <Input
+                type="date"
                 disabled={!formData.hasWarranty}
-                value={formData.warrantyExpiry} 
-                onChange={(e) => setFormData({ ...formData, warrantyExpiry: e.target.value })} 
+                value={formData.warrantyExpiry}
+                onChange={(e) => setFormData({ ...formData, warrantyExpiry: e.target.value })}
                 required={formData.hasWarranty}
               />
             </div>
@@ -526,9 +526,9 @@ function EditAssetModal({ isOpen, onClose, asset }) {
             </div>
             <div className="space-y-2 flex flex-col justify-end">
               <div className="flex items-center space-x-2 py-2">
-                <input 
-                  type="checkbox" 
-                  id="editHasWarranty" 
+                <input
+                  type="checkbox"
+                  id="editHasWarranty"
                   checked={formData.hasWarranty}
                   onChange={(e) => setFormData({ ...formData, hasWarranty: e.target.checked, warrantyExpiry: e.target.checked ? formData.warrantyExpiry : '' })}
                   className="rounded border-gray-300 w-4 h-4 cursor-pointer text-indigo-600 focus:ring-indigo-600"
@@ -538,11 +538,11 @@ function EditAssetModal({ isOpen, onClose, asset }) {
             </div>
             <div className="space-y-2">
               <Label>Warranty Expiry</Label>
-              <Input 
-                type="date" 
+              <Input
+                type="date"
                 disabled={!formData.hasWarranty}
-                value={formData.warrantyExpiry} 
-                onChange={(e) => setFormData({ ...formData, warrantyExpiry: e.target.value })} 
+                value={formData.warrantyExpiry}
+                onChange={(e) => setFormData({ ...formData, warrantyExpiry: e.target.value })}
                 required={formData.hasWarranty}
               />
             </div>
@@ -583,17 +583,17 @@ function ImportAssetsModal({ isOpen, onClose }) {
       onError: (err) => {
         const errData = err.response?.data;
         if (errData && errData.errors) {
-            setErrors(errData.errors);
-            toast.error('Import failed due to validation errors.');
+          setErrors(errData.errors);
+          toast.error('Import failed due to validation errors.');
         } else {
-            toast.error(err.response?.data?.message || err.message || 'Import failed');
+          toast.error(err.response?.data?.message || err.message || 'Import failed');
         }
       }
     });
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if(!open) { onClose(); setFile(null); setErrors([]); } }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) { onClose(); setFile(null); setErrors([]); } }}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Import Assets</DialogTitle>
@@ -613,11 +613,11 @@ function ImportAssetsModal({ isOpen, onClose }) {
               <Input type="file" accept=".xlsx,.xls" onChange={(e) => setFile(e.target.files[0])} />
             </div>
             {errors.length > 0 && (
-                <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm max-h-32 overflow-y-auto">
-                    <ul className="list-disc pl-4">
-                        {errors.map((err, i) => <li key={i}>{err}</li>)}
-                    </ul>
-                </div>
+              <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm max-h-32 overflow-y-auto">
+                <ul className="list-disc pl-4">
+                  {errors.map((err, i) => <li key={i}>{err}</li>)}
+                </ul>
+              </div>
             )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => { onClose(); setFile(null); setErrors([]); }}>Cancel</Button>

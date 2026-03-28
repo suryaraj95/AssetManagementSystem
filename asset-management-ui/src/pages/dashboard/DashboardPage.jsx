@@ -29,7 +29,7 @@ export default function DashboardPage() {
     return {
       statusData: Object.entries(statusCounts).map(([name, value]) => ({ name, value })),
       conditionData: Object.entries(condCounts).map(([name, value]) => ({ name, value })),
-      categoryData: Object.entries(catCounts).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value).slice(0, 10) // Top 10 categories
+      categoryData: Object.entries(catCounts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10) // Top 10 categories
     };
   }, [assets]);
 
@@ -41,7 +41,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">System Intelligence</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Assets Dashboard</h1>
         <p className="text-muted-foreground">Welcome back, {user?.fullName}. Here are your real-time ecosystem telemetry graphs.</p>
       </div>
 
@@ -68,7 +68,7 @@ export default function DashboardPage() {
         {/* Condition Distribution */}
         <Card className="shadow-sm border-slate-200">
           <CardHeader>
-            <CardTitle>Hardware Health Metrics</CardTitle>
+            <CardTitle>Hardware Health Status</CardTitle>
             <CardDescription>General lifecycle condition breakdown</CardDescription>
           </CardHeader>
           <CardContent className="h-80">
@@ -88,16 +88,16 @@ export default function DashboardPage() {
       {/* Category Volumes */}
       <Card className="shadow-sm border-slate-200">
         <CardHeader>
-          <CardTitle>Inventory Density by Category</CardTitle>
+          <CardTitle>Inventory by Category</CardTitle>
           <CardDescription>Top deployed asset categories globally</CardDescription>
         </CardHeader>
         <CardContent className="h-[400px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={categoryData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
-              <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
-              <Tooltip cursor={{fill: '#f1f5f9'}} wrapperClassName="rounded-md shadow-md" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} />
+              <Tooltip cursor={{ fill: '#f1f5f9' }} wrapperClassName="rounded-md shadow-md" />
               <Bar dataKey="value" fill="#818cf8" radius={[4, 4, 0, 0]} name="Total Units" barSize={45}>
                 {categoryData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={`hsl(226, 70%, ${50 + (index * 4)}%)`} />

@@ -25,7 +25,7 @@ export const Sidebar = () => {
   return (
     <div className="w-64 bg-slate-900 h-screen text-slate-300 flex flex-col">
       <div className="h-16 flex items-center px-6 font-bold text-white text-xl tracking-wide border-b border-slate-800">
-        Asset Mgmt
+        Asset Management
       </div>
       <nav className="flex-1 py-4 space-y-1">
         {items.map((item) => {
@@ -35,8 +35,7 @@ export const Sidebar = () => {
               key={item.name}
               to={item.to}
               className={({ isActive }) =>
-                `flex items-center px-6 py-3 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 hover:text-white'
+                `flex items-center px-6 py-3 text-sm font-medium transition-colors ${isActive ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 hover:text-white'
                 }`
               }
             >

@@ -12,7 +12,7 @@ export default function StockReportPage() {
   // Group assets internally by Category -> Asset Type -> Status
   const reportData = useMemo(() => {
     if (!assets.length) return [];
-    
+
     const grouping = {};
 
     assets.forEach((asset) => {
@@ -31,7 +31,7 @@ export default function StockReportPage() {
       }
 
       grouping[cat][type].total += 1;
-      
+
       if (asset.status === 'Available') grouping[cat][type].available += 1;
       else if (asset.status === 'Assigned') grouping[cat][type].assigned += 1;
       else if (asset.status === 'Maintenance') grouping[cat][type].maintenance += 1;
@@ -89,11 +89,11 @@ export default function StockReportPage() {
             <TableRow>
               <TableHead>Category</TableHead>
               <TableHead>Asset Type</TableHead>
-              <TableHead className="text-right">Available Stock</TableHead>
-              <TableHead className="text-right">Assigned</TableHead>
-              <TableHead className="text-right">In Maintenance</TableHead>
-              <TableHead className="text-right">Retired</TableHead>
-              <TableHead className="text-right font-bold text-slate-800">Total Units</TableHead>
+              <TableHead className="text-center">Available Stock</TableHead>
+              <TableHead className="text-center">Assigned</TableHead>
+              <TableHead className="text-center">In Maintenance</TableHead>
+              <TableHead className="text-center">Retired</TableHead>
+              <TableHead className="text-center font-bold text-slate-800">Total Units</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -106,11 +106,11 @@ export default function StockReportPage() {
                 <TableRow key={index} className="hover:bg-slate-50 transition-colors">
                   <TableCell className="font-semibold text-slate-900">{row.category}</TableCell>
                   <TableCell className="text-slate-700">{row.type}</TableCell>
-                  <TableCell className="text-right font-medium text-emerald-600">{row.stats.available}</TableCell>
-                  <TableCell className="text-right text-indigo-600">{row.stats.assigned}</TableCell>
-                  <TableCell className="text-right text-amber-600">{row.stats.maintenance}</TableCell>
-                  <TableCell className="text-right text-slate-400">{row.stats.retired}</TableCell>
-                  <TableCell className="text-right font-bold text-slate-800 bg-slate-50/50">{row.stats.total}</TableCell>
+                  <TableCell className="text-center font-medium text-emerald-600">{row.stats.available}</TableCell>
+                  <TableCell className="text-center text-indigo-600">{row.stats.assigned}</TableCell>
+                  <TableCell className="text-center text-amber-600">{row.stats.maintenance}</TableCell>
+                  <TableCell className="text-center text-slate-400">{row.stats.retired}</TableCell>
+                  <TableCell className="text-center font-bold text-slate-800 bg-slate-50/50">{row.stats.total}</TableCell>
                 </TableRow>
               ))
             )}
