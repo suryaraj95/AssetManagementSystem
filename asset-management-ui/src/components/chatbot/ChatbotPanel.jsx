@@ -14,42 +14,88 @@ function MessageBubble({ role, content }) {
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
-      if (line.startsWith('```')) {
-        // code block
+
+      // --- 1. Code Block ---
+      if (line.trim().startsWith('```')) {
         let code = [];
         i++;
-        while (i < lines.length && !lines[i].startsWith('```')) {
+        while (i < lines.length && !lines[i].trim().startsWith('```')) {
           code.push(lines[i]);
           i++;
         }
         elements.push(
-          <pre key={i} style={{
-            background: 'rgba(0,0,0,0.08)', borderRadius: 6, padding: '8px 10px',
-            fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap', margin: '4px 0'
-          }}><code>{code.join('\n')}</code></pre>
+          <pre key={i} className="chatbot-code-block">
+            <code>{code.join('\n')}</code>
+          </pre>
         );
-      } else if (line.startsWith('- ') || line.startsWith('* ')) {
-        // bullet
+      }
+      // --- 2. Table ---
+      else if (line.trim().startsWith('|')) {
+        const tableRows = [];
+        while (i < lines.length && lines[i].trim().startsWith('|')) {
+          const row = lines[i].trim();
+          // Skip separator lines like |---|---|
+          if (!row.match(/^\|[\s\-\|]+$/)) {
+            const cells = row.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+            tableRows.push(cells.map(c => c.trim()));
+          }
+          i++;
+        }
+        if (tableRows.length > 0) {
+          elements.push(
+            <div key={i} style={{ overflowX: 'auto', margin: '8px 0' }}>
+              <table className="chatbot-table">
+                <thead>
+                  <tr>
+                    {tableRows[0].map((cell, idx) => (
+                      <th key={idx}>{formatInline(cell)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableRows.slice(1).map((row, rIdx) => (
+                    <tr key={rIdx}>
+                      {row.map((cell, cIdx) => (
+                        <td key={cIdx}>{formatInline(cell)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+          i--; // adjust because the outer while also increments
+        }
+      }
+      // --- 3. Bullet List ---
+      else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
         elements.push(
-          <li key={i} style={{ marginLeft: 14, listStyleType: 'disc', fontSize: 13 }}>
-            {formatInline(line.slice(2))}
+          <li key={i} style={{ marginLeft: 14, listStyleType: 'disc', fontSize: 13, marginBottom: 2 }}>
+            {formatInline(line.trim().slice(2))}
           </li>
         );
-      } else if (line.match(/^\d+\. /)) {
-        // numbered list
+      }
+      // --- 4. Numbered List ---
+      else if (line.trim().match(/^\d+\. /)) {
         elements.push(
-          <li key={i} style={{ marginLeft: 14, listStyleType: 'decimal', fontSize: 13 }}>
-            {formatInline(line.replace(/^\d+\. /, ''))}
+          <li key={i} style={{ marginLeft: 14, listStyleType: 'decimal', fontSize: 13, marginBottom: 2 }}>
+            {formatInline(line.trim().replace(/^\d+\. /, ''))}
           </li>
         );
-      } else if (line.startsWith('### ')) {
-        elements.push(<p key={i} style={{ fontWeight: 700, fontSize: 13, margin: '4px 0 2px' }}>{line.slice(4)}</p>);
+      }
+      // --- 5. Headers ---
+      else if (line.startsWith('### ')) {
+        elements.push(<p key={i} style={{ fontWeight: 700, fontSize: 13, margin: '6px 0 2px' }}>{line.slice(4)}</p>);
       } else if (line.startsWith('## ')) {
-        elements.push(<p key={i} style={{ fontWeight: 700, fontSize: 14, margin: '6px 0 2px' }}>{line.slice(3)}</p>);
-      } else if (line === '') {
-        elements.push(<br key={i} />);
-      } else {
-        elements.push(<p key={i} style={{ margin: '1px 0', fontSize: 13 }}>{formatInline(line)}</p>);
+        elements.push(<p key={i} style={{ fontWeight: 700, fontSize: 14, margin: '8px 0 4px', borderBottom: '1px solid #e2e8f0', paddingBottom: 2 }}>{line.slice(3)}</p>);
+      }
+      // --- 6. Empty Line ---
+      else if (line.trim() === '') {
+        elements.push(<div key={i} style={{ height: 8 }} />);
+      }
+      // --- 7. Regular Text ---
+      else {
+        elements.push(<p key={i} style={{ margin: '2px 0', fontSize: 13, lineHeight: '1.5' }}>{formatInline(line)}</p>);
       }
       i++;
     }
@@ -57,6 +103,7 @@ function MessageBubble({ role, content }) {
   };
 
   const formatInline = (text) => {
+    if (!text) return '';
     // **bold**
     const parts = text.split(/(\*\*[^*]+\*\*)/g);
     return parts.map((p, idx) =>
@@ -237,6 +284,45 @@ export default function ChatbotPanel() {
           70% { box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
           100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
         }
+        .chatbot-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 12px;
+          margin: 4px 0;
+          background: #fff;
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .chatbot-table th {
+          background: #f8fafc;
+          padding: 8px;
+          text-align: left;
+          font-weight: 600;
+          border-bottom: 2px solid #e2e8f0;
+          color: #475569;
+        }
+        .chatbot-table td {
+          padding: 8px;
+          border-bottom: 1px solid #f1f5f9;
+          color: #334155;
+        }
+        .chatbot-table tr:last-child td {
+          border-bottom: none;
+        }
+        .chatbot-table tr:nth-child(even) {
+          background: #fcfdfe;
+        }
+        .chatbot-code-block {
+          background: rgba(0,0,0,0.08);
+          border-radius: 6px;
+          padding: 8px 10px;
+          font-size: 12px;
+          overflow-x: auto;
+          white-space: pre-wrap;
+          margin: 4px 0;
+          border: 1px solid rgba(0,0,0,0.05);
+        }
       `}</style>
 
       {/* Floating bubble button */}
@@ -292,7 +378,7 @@ export default function ChatbotPanel() {
                     display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
                     background: '#4ade80', marginRight: 4, verticalAlign: 'middle'
                   }} />
-                  Powered by Gemini
+                  Powered by Groq
                 </div>
               </div>
             </div>

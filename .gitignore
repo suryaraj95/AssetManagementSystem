@@ -1,0 +1,30 @@
+# .NET Core
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.doccache
+*.suo
+
+# IDEs
+.vs/
+.vscode/
+.idea/
+
+# Configuration & Secrets
+appsettings.Development.json
+appsettings.Local.json
+.env
+*.pfx
+*.publishsettings
+
+# Frontend
+node_modules/
+dist/
+dist-ssr
+*.local
+.pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

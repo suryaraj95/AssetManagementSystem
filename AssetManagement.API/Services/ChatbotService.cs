@@ -26,6 +26,8 @@ public class ChatbotService
         WriteIndented = false
     };
 
+    private const int MaxRetries = 3;
+
     public ChatbotService(
         HttpClient http,
         ChatbotQueryService queryService,
@@ -40,304 +42,144 @@ public class ChatbotService
 
     public async Task<string> ChatAsync(ChatRequestDto request)
     {
-        var apiKey = _config["Gemini:ApiKey"];
-        var model  = _config["Gemini:Model"] ?? "gemini-2.0-flash";
+        // 1. Resolve API Key (Priority: Env Var > appsettings.json)
+        var apiKey = Environment.GetEnvironmentVariable("GROQ_API_KEY") 
+                     ?? _config["Groq:ApiKey"];
+        
+        var model  = _config["Groq:Model"] ?? "llama3-70b-8192";
+        var apiUrl = _config["Groq:ApiUrl"] ?? "https://api.groq.com/openai/v1/chat/completions";
 
         if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_"))
-            return "⚠️ Gemini API key is not configured. Please add your API key to `appsettings.json` under `Gemini:ApiKey`.";
+            return "⚠️ Groq API key is not configured. Please set the `GROQ_API_KEY` environment variable or update `appsettings.json`.";
 
-        // ── System instruction ──────────────────────────────────────────────
-        var systemInstruction = new JsonObject
-        {
-            ["parts"] = new JsonArray
+        // ── Step 1: Intent Detection ────────────────────────────────────────
+        var intentSystemPrompt = """
+            You are an Intent Classifier for an Asset Management System.
+            Given a user's message, you must respond ONLY with a JSON object.
+            
+            JSON Schema:
             {
-                new JsonObject
-                {
-                    ["text"] = """
-                        You are an AI assistant embedded in an Asset Management System.
-                        Your ONLY purpose is to answer questions about the asset data in this platform:
-                        assets, employees, branches, categories, conditions, statuses, requests, warranty, purchase info, and asset history.
-                        
-                        Rules:
-                        - ALWAYS use the available tool functions to fetch real data before answering. Do not guess or make up numbers.
-                        - If a question is unrelated to asset management (e.g. weather, general knowledge, coding), respond:
-                          "I can only answer questions related to asset management data in this platform."
-                        - Keep responses concise, clear, and helpful. Use bullet points or tables when listing multiple items.
-                        - When users ask about counts or totals, use get_asset_summary first.
-                        - Today's date for context: use this when interpreting relative date queries.
-                    """
-                }
+              "intent": "string", 
+              "parameters": { "paramName": "value" },
+              "is_data_query": boolean,
+              "general_answer": "string"
+            }
+            
+            Rules:
+            1. If the user asks for DATA (counts, lists, details, history, warranty), set:
+               is_data_query: true, intent: [one of the following], parameters: [extracted values]
+               Available intents: get_asset_summary, get_assets_by_status, get_employees_without_assets, get_employees_with_assets, 
+                                  get_assets_by_employee, get_assets_by_category, get_assets_expiring_warranty, get_assets_by_branch, 
+                                  get_assets_by_condition, get_pending_requests, get_asset_details, get_recent_asset_history, 
+                                  get_assets_purchased_in_range, get_high_value_assets.
+            2. If the user asks a GENERAL question (system help, "how are you?", "what can you do?"), or something unrelated, set:
+               is_data_query: false, intent: "general_query", general_answer: "Your helpful response here."
+            3. If the user asks about something NOT related to asset management, respond with is_data_query: false and 
+               general_answer: "I can only answer questions related to asset management data in this platform."
+            4. Respond ONLY with the JSON object. Do not include markdown blocks or any other text.
+            """;
+
+        var intentPayload = new JsonObject
+        {
+            ["model"] = model,
+            ["temperature"] = 0,
+            ["messages"] = new JsonArray
+            {
+                new JsonObject { ["role"] = "system", ["content"] = intentSystemPrompt },
+                new JsonObject { ["role"] = "user", ["content"] = request.Message }
             }
         };
 
-        // ── Tool declarations ───────────────────────────────────────────────
-        var tools = new JsonArray
-        {
-            new JsonObject
-            {
-                ["function_declarations"] = new JsonArray
-                {
-                    MakeTool("get_asset_summary",
-                        "Get a high-level summary: total assets, assigned, available, under maintenance, retired counts, pending requests, and breakdown by category.",
-                        new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }),
-                    MakeTool("get_assets_by_status",
-                        "Get all assets filtered by a specific status.",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["status"] = Prop("string", "Status value: Assigned, Available, Under Maintenance, or Retired")
-                            },
-                            ["required"] = new JsonArray { "status" }
-                        }),
-                    MakeTool("get_employees_without_assets",
-                        "Get all active employees who have no asset currently assigned to them.",
-                        new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }),
-                    MakeTool("get_employees_with_assets",
-                        "Get all employees who currently have at least one asset assigned, including their asset list.",
-                        new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }),
-                    MakeTool("get_assets_by_employee",
-                        "Get all assets assigned to a specific employee. Search by name, employee ID, or email.",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["employee_name_or_id"] = Prop("string", "Employee full name, employee ID code, or email")
-                            },
-                            ["required"] = new JsonArray { "employee_name_or_id" }
-                        }),
-                    MakeTool("get_assets_by_category",
-                        "Get all assets belonging to a specific category (e.g. Laptop, Mobile, Furniture).",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["category_name"] = Prop("string", "Category name (partial match supported)")
-                            },
-                            ["required"] = new JsonArray { "category_name" }
-                        }),
-                    MakeTool("get_assets_expiring_warranty",
-                        "Get assets whose warranty expires within the next N days (default 30).",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["days"] = Prop("integer", "Number of days from today (default: 30)")
-                            }
-                        }),
-                    MakeTool("get_assets_by_branch",
-                        "Get all assets at a specific branch or location.",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["branch_name"] = Prop("string", "Branch or office name (partial match supported)")
-                            },
-                            ["required"] = new JsonArray { "branch_name" }
-                        }),
-                    MakeTool("get_assets_by_condition",
-                        "Get all assets filtered by physical condition: Good, Fair, Poor, or Broken.",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["condition"] = Prop("string", "Condition: Good, Fair, Poor, or Broken")
-                            },
-                            ["required"] = new JsonArray { "condition" }
-                        }),
-                    MakeTool("get_pending_requests",
-                        "Get all pending asset requests from employees (new asset or replacement requests awaiting approval).",
-                        new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }),
-                    MakeTool("get_asset_details",
-                        "Get complete details of a single asset by its Asset ID code.",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["asset_id"] = Prop("string", "The Asset ID code (e.g. LPT-001)")
-                            },
-                            ["required"] = new JsonArray { "asset_id" }
-                        }),
-                    MakeTool("get_recent_asset_history",
-                        "Get the most recent asset activity log entries (assignments, status changes, dispatches, etc.).",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["limit"] = Prop("integer", "Number of records to return (default: 10, max: 100)")
-                            }
-                        }),
-                    MakeTool("get_assets_purchased_in_range",
-                        "Get all assets purchased within a specific date range, with total cost.",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["from_date"] = Prop("string", "Start date in YYYY-MM-DD format"),
-                                ["to_date"]   = Prop("string", "End date in YYYY-MM-DD format")
-                            },
-                            ["required"] = new JsonArray { "from_date", "to_date" }
-                        }),
-                    MakeTool("get_high_value_assets",
-                        "Get all assets whose purchase cost is at or above a specified threshold.",
-                        new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["min_cost"] = Prop("number", "Minimum purchase cost (e.g. 50000)")
-                            },
-                            ["required"] = new JsonArray { "min_cost" }
-                        })
-                }
-            }
-        };
+        var (intentResponse, intentError) = await CallGroqAsync(apiKey, apiUrl, intentPayload);
+        if (intentResponse == null) return intentError ?? "❌ Failed to detect intent via Groq.";
 
-        // ── Build conversation history ───────────────────────────────────────
-        var contents = new JsonArray();
+        var intentJsonRaw = ExtractGroqContent(intentResponse);
+        if (string.IsNullOrWhiteSpace(intentJsonRaw)) return "❌ Groq failed to categorize your request.";
 
-        // Prior turns
-        foreach (var msg in request.History)
+        JsonObject? intentJson;
+        try 
         {
-            contents.Add(new JsonObject
-            {
-                ["role"] = msg.Role == "assistant" ? "model" : "user",
-                ["parts"] = new JsonArray { new JsonObject { ["text"] = msg.Content } }
-            });
+            var cleanJson = intentJsonRaw.Trim();
+            if (cleanJson.StartsWith("```json")) cleanJson = cleanJson.Replace("```json", "").Replace("```", "").Trim();
+            else if (cleanJson.StartsWith("```")) cleanJson = cleanJson.Replace("```", "").Trim();
+            
+            intentJson = JsonNode.Parse(cleanJson)?.AsObject();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to parse Groq intent JSON: {Raw}", intentJsonRaw);
+            return "❌ I had trouble understanding the intent of your request. Please try rephrasing.";
         }
 
-        // New user message
-        contents.Add(new JsonObject
-        {
-            ["role"] = "user",
-            ["parts"] = new JsonArray { new JsonObject { ["text"] = request.Message } }
-        });
+        if (intentJson == null) return "❌ Failed to parse intent.";
 
-        // ── First Gemini call ───────────────────────────────────────────────
-        var geminiReq = new JsonObject
-        {
-            ["system_instruction"] = systemInstruction,
-            ["tools"]             = tools,
-            ["contents"]          = contents
-        };
+        var isDataQuery = intentJson["is_data_query"]?.GetValue<bool>() ?? false;
+        var intentName  = intentJson["intent"]?.GetValue<string>();
+        var genAnswer   = intentJson["general_answer"]?.GetValue<string>();
 
-        var (firstResponse, firstError) = await CallGeminiAsync(apiKey, model, geminiReq);
-        if (firstResponse == null)
-            return firstError ?? "❌ Could not reach the Gemini API. Please verify your API key and network connection.";
+        if (!isDataQuery)
+            return genAnswer ?? "How can I help you today?";
 
-        // ── Check for functionCall ──────────────────────────────────────────
-        var candidate = firstResponse["candidates"]?[0];
-        var parts     = candidate?["content"]?["parts"];
-
-        if (parts == null)
-            return ExtractText(firstResponse) ?? "I'm unable to answer that right now.";
-
-        // Check if any part is a functionCall
-        JsonObject? funcCallPart = null;
-        foreach (var part in parts.AsArray())
-        {
-            if (part is JsonObject obj && obj.ContainsKey("functionCall"))
-            {
-                funcCallPart = obj;
-                break;
-            }
-        }
-
-        if (funcCallPart == null)
-            return ExtractText(firstResponse) ?? "I'm unable to answer that right now.";
-
-        // ── Execute the tool ────────────────────────────────────────────────
-        var funcCall  = funcCallPart["functionCall"]!.AsObject();
-        var funcName  = funcCall["name"]?.GetValue<string>() ?? "";
-        var funcArgs  = funcCall["args"]?.Deserialize<JsonElement>() ?? default;
-
-        _logger.LogInformation("Chatbot dispatching tool: {FunctionName}", funcName);
+        // ── Step 2: Backend Data Fetching ───────────────────────────────────
+        var parameters = intentJson["parameters"]?.Deserialize<JsonElement>() ?? default;
+        _logger.LogInformation("Groq Chatbot dispatching intent: {IntentName}", intentName);
 
         object toolResult;
         try
         {
-            toolResult = await _queryService.DispatchToolCallAsync(funcName, funcArgs);
+            toolResult = await _queryService.DispatchToolCallAsync(intentName ?? "", parameters);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Tool execution failed for {FunctionName}", funcName);
-            toolResult = new { error = $"Tool execution failed: {ex.Message}" };
+            _logger.LogError(ex, "Data fetch failed for intent {IntentName}", intentName);
+            return $"❌ Sorry, I encountered an error while fetching the data: {ex.Message}";
         }
 
-        // ── Build second request with functionResponse ───────────────────────
-        // Append model's functionCall turn
-        contents.Add(new JsonObject
-        {
-            ["role"] = "model",
-            ["parts"] = new JsonArray { funcCallPart.DeepClone() }
-        });
+        // ── Step 3: Natural Language Response ───────────────────────────────
+        var formatPrompt = $"""
+            You are a helpful Asset Management Assistant.
+            User asked: "{request.Message}"
+            Real technical data from the database: {JsonSerializer.Serialize(toolResult, _jsonOpts)}
+            
+            Task: Provide a clear, human-friendly answer based ONLY on the data provided. 
+            Keep it concise but helpful. Use bullet points or tables where appropriate.
+            """;
 
-        // Append function result turn
-        var toolResultJson = JsonSerializer.SerializeToNode(toolResult, _jsonOpts);
-        contents.Add(new JsonObject
+        var formatPayload = new JsonObject
         {
-            ["role"] = "user",
-            ["parts"] = new JsonArray
+            ["model"] = model,
+            ["messages"] = new JsonArray
             {
-                new JsonObject
-                {
-                    ["functionResponse"] = new JsonObject
-                    {
-                        ["name"]     = funcName,
-                        ["response"] = new JsonObject { ["content"] = toolResultJson }
-                    }
-                }
+                new JsonObject { ["role"] = "system", ["content"] = "You are a helpful Asset Management Assistant. Answer based on the provided JSON data." },
+                new JsonObject { ["role"] = "user", ["content"] = formatPrompt }
             }
-        });
-
-        var secondReq = new JsonObject
-        {
-            ["system_instruction"] = systemInstruction.DeepClone(),
-            ["tools"]             = tools.DeepClone(),
-            ["contents"]          = contents
         };
 
-        var (secondResponse, secondError) = await CallGeminiAsync(apiKey, model, secondReq);
-        if (secondResponse == null)
-            return secondError ?? "❌ Gemini did not return a final response after tool execution.";
+        var (finalResponse, finalError) = await CallGroqAsync(apiKey, apiUrl, formatPayload);
+        if (finalResponse == null) 
+            return finalError ?? "❌ I fetched the data but failed to format the response.";
 
-        return ExtractText(secondResponse) ?? "I processed your request but couldn't format a response.";
+        return ExtractGroqContent(finalResponse) ?? "I have the data but was unable to generate a text response.";
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────────
-
-    private const int MaxRetries = 3;
-
-    /// Calls Gemini with exponential backoff on 429 rate-limit responses.
-    /// Returns (response, errorMessage). errorMessage is non-null on failure.
-    private async Task<(JsonObject? Response, string? Error)> CallGeminiAsync(string apiKey, string model, JsonObject payload)
+    private async Task<(JsonObject? Response, string? Error)> CallGroqAsync(string apiKey, string url, JsonObject payload)
     {
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
-
         for (int attempt = 0; attempt < MaxRetries; attempt++)
         {
-            // Re-create body each attempt (StringContent is not reusable)
-            var body = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            req.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
 
             HttpResponseMessage resp;
             try
             {
-                resp = await _http.PostAsync(url, body);
+                resp = await _http.SendAsync(req);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Gemini HTTP call failed on attempt {Attempt}", attempt + 1);
+                _logger.LogError(ex, "Groq HTTP call failed on attempt {Attempt}", attempt + 1);
                 if (attempt == MaxRetries - 1)
-                    return (null, $"Network error reaching Gemini API: {ex.Message}");
+                    return (null, $"Network error reaching Groq API: {ex.Message}");
                 await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
                 continue;
             }
@@ -352,87 +194,47 @@ public class ChatbotService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to parse Gemini response JSON");
-                    return (null, "❌ Received an unreadable response from Gemini.");
+                    _logger.LogError(ex, "Failed to parse Groq response JSON");
+                    return (null, "❌ Received an unreadable response from Groq.");
                 }
             }
 
-            // 429 = rate limited — wait and retry using Gemini's suggested delay if available
-            if ((int)resp.StatusCode == 429 && attempt < MaxRetries - 1)
-            {
-                // Try to read Gemini's own retryDelay suggestion
-                int waitSeconds;
-                try
-                {
-                    var errNode = JsonNode.Parse(raw);
-                    var retryDelayStr = errNode?["error"]?["details"]
-                        ?.AsArray()
-                        .Select(d => d?["retryDelay"]?.GetValue<string>())
-                        .FirstOrDefault(s => s != null);
-                    // retryDelay is like "26s" — parse it, cap at 30s
-                    waitSeconds = retryDelayStr != null && int.TryParse(retryDelayStr.TrimEnd('s'), out var rd)
-                        ? Math.Min(rd + 2, 30)
-                        : new[] { 5, 15, 30 }[attempt]; // fallback: 5s, 15s, 30s
-                }
-                catch
-                {
-                    waitSeconds = new[] { 5, 15, 30 }[attempt];
-                }
-                _logger.LogWarning("Gemini rate-limited (429) on attempt {Attempt}. Retrying in {Wait}s…", attempt + 1, waitSeconds);
-                await Task.Delay(TimeSpan.FromSeconds(waitSeconds));
-                continue;
-            }
-
-            // Other non-success — extract readable message and return
-            _logger.LogWarning("Gemini returned {Status}: {Body}", resp.StatusCode, raw);
-            string geminiMsg = raw;
+            _logger.LogWarning("Groq returned {Status}: {Body}", resp.StatusCode, raw);
+            string groqMsg = raw;
             try
             {
                 var errNode = JsonNode.Parse(raw);
-                geminiMsg = errNode?["error"]?["message"]?.GetValue<string>() ?? raw;
+                groqMsg = errNode?["error"]?["message"]?.GetValue<string>() ?? raw;
             }
-            catch { /* keep raw */ }
+            catch { }
 
             var friendlyMsg = (int)resp.StatusCode switch
             {
-                400 => $"❌ Gemini rejected the request: {geminiMsg}",
-                401 or 403 => "❌ Gemini API key is invalid or unauthorized. Please check your API key in `appsettings.json`.",
-                429 => "⏳ Gemini rate limit reached after retries. Please wait a moment and try again (free tier: 15 requests/min).",
-                503 => "🔧 Gemini service is temporarily unavailable. Please try again in a few seconds.",
-                _ => $"❌ Gemini returned HTTP {(int)resp.StatusCode}: {geminiMsg}"
+                400 => $"❌ Groq rejected the request: {groqMsg}",
+                401 or 403 => "❌ Groq API key is invalid or unauthorized.",
+                429 => "⏳ Groq rate limit reached. Please wait a moment.",
+                503 => "🔧 Groq service is temporarily unavailable.",
+                _ => $"❌ Groq returned HTTP {(int)resp.StatusCode}: {groqMsg}"
             };
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests && attempt < MaxRetries - 1)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5 * (attempt + 1))); 
+                continue;
+            }
 
             return (null, friendlyMsg);
         }
 
-        return (null, "⏳ Gemini rate limit reached after retries. Please wait a moment and try again.");
+        return (null, "⏳ Groq rate limit reached after retries.");
     }
 
-    private static string? ExtractText(JsonObject response)
+    private static string? ExtractGroqContent(JsonObject response)
     {
         try
         {
-            var parts = response["candidates"]?[0]?["content"]?["parts"];
-            if (parts == null) return null;
-            var sb = new StringBuilder();
-            foreach (var p in parts.AsArray())
-            {
-                var text = p?["text"]?.GetValue<string>();
-                if (!string.IsNullOrWhiteSpace(text)) sb.AppendLine(text);
-            }
-            return sb.Length > 0 ? sb.ToString().Trim() : null;
+            return response["choices"]?[0]?["message"]?["content"]?.GetValue<string>();
         }
         catch { return null; }
     }
-
-    private static JsonObject MakeTool(string name, string description, JsonObject parameters) =>
-        new JsonObject
-        {
-            ["name"]        = name,
-            ["description"] = description,
-            ["parameters"]  = parameters
-        };
-
-    private static JsonObject Prop(string type, string description) =>
-        new JsonObject { ["type"] = type, ["description"] = description };
 }
